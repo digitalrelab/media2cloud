@@ -123,8 +123,9 @@ Parameters:
     AIOptions:
         Type: String
         Description: enable analysis features
-        Default: Default (Celeb,Label,Transcript,Keyphrase,Entity,Text)
+        Default: Starchive.io (Celeb only)
         AllowedValues:
+            - Starchive.io (Celeb only)
             - Default (Celeb,Label,Transcript,Keyphrase,Entity,Text)
             - All (Celeb,Label,Face,FaceMatch,Person,Moderation,Transcript,Keyphrase,Entity,Sentiment,Topic,Text)
             - Audio and Text (Transcript,Keyphrase,Entity,Text)
@@ -202,6 +203,10 @@ Conditions:
         ]
     ]
     # AI/ML selection
+    bAimlCustom: !Equals [
+        !Ref AIOptions,
+        "Starchive.io (Celeb only)"
+    ]
     bAimlDefault: !Equals [
         !Ref AIOptions,
         "Default (Celeb,Label,Transcript,Keyphrase,Entity,Text)"
@@ -1471,14 +1476,18 @@ Resources:
             IngestBucket: !GetAtt BucketStack.Outputs.IngestBucket
             ProxyBucket: !GetAtt BucketStack.Outputs.ProxyBucket
             AIOptions: !If [
-                bAimlAudioText,
-                "transcript,keyphrase,entity,text",
+                bAimlCustom,
+                "celeb",
                 !If [
-                    bAimlDefault,
-                    "transcript,keyphrase,entity,text,celeb,label",
-                    "transcript,keyphrase,entity,sentiment,topic,label,faceMatch,celeb,face,person,moderation,text"
+                    bAimlAudioText,
+                    "transcript,keyphrase,entity,text",
+                    !If [
+                        bAimlDefault,
+                        "transcript,keyphrase,entity,text,celeb,label",
+                        "transcript,keyphrase,entity,sentiment,topic,label,faceMatch,celeb,face,person,moderation,text"
+                        ]
                     ]
-                ]
+            ]
             LanguageCode: !Ref LanguageCode
             FaceCollectionId: !GetAtt CreateFaceCollection.Id
             CustomVocabulary: !GetAtt CreateCustomVocabulary.Name
@@ -1763,14 +1772,18 @@ Resources:
                 MediaConvertEndpoint: !GetAtt MediaConvertUrl.Endpoint
                 # AI/ML
                 AIOptions: !If [
-                    bAimlAudioText,
-                    "transcript,keyphrase,entity,text",
+                    bAimlCustom,
+                    "celeb",
                     !If [
-                        bAimlDefault,
-                        "transcript,keyphrase,entity,text,celeb,label",
-                        "transcript,keyphrase,entity,sentiment,topic,label,faceMatch,celeb,face,person,moderation,text"
+                        bAimlAudioText,
+                        "transcript,keyphrase,entity,text",
+                        !If [
+                            bAimlDefault,
+                            "transcript,keyphrase,entity,text,celeb,label",
+                            "transcript,keyphrase,entity,sentiment,topic,label,faceMatch,celeb,face,person,moderation,text"
+                            ]
                         ]
-                    ]
+                ]
                 LanguageCode: !Ref LanguageCode
                 FaceCollectionId: !GetAtt CreateFaceCollection.Id
                 CustomVocabulary: !GetAtt CreateCustomVocabulary.Name
@@ -2163,14 +2176,18 @@ Resources:
                 ]
                 # AI/ML
                 AIOptions: !If [
-                    bAimlAudioText,
-                    "transcript,keyphrase,entity,text",
+                    bAimlCustom,
+                    "celeb",
                     !If [
-                        bAimlDefault,
-                        "transcript,keyphrase,entity,text,celeb,label",
-                        "transcript,keyphrase,entity,sentiment,topic,label,faceMatch,celeb,face,person,moderation,text"
+                        bAimlAudioText,
+                        "transcript,keyphrase,entity,text",
+                        !If [
+                            bAimlDefault,
+                            "transcript,keyphrase,entity,text,celeb,label",
+                            "transcript,keyphrase,entity,sentiment,topic,label,faceMatch,celeb,face,person,moderation,text"
+                            ]
                         ]
-                    ]
+                ]
                 LanguageCode: !Ref LanguageCode
                 FaceCollectionId: !GetAtt CreateFaceCollection.Id
                 CustomVocabulary: !GetAtt CreateCustomVocabulary.Name
