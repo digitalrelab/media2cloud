@@ -1,0 +1,748 @@
+AWSTemplateFormatVersion: "2010-09-09"
+
+Description: (SO0050-extra) Media2Cloud Analysis Automation - automate analysis process with Amazon SNS, Amazon CloudWatch Event, and Amazon DynamoDB.
+
+#
+# Mappings to store static value of the solution
+#
+Mappings:
+    Solution:
+        Project:
+            Id: SO0050
+            Version: "%VERSION%"
+        Template:
+            S3Bucket: "%BUCKET%"
+            KeyPrefix: "%KEYPREFIX%"
+        Package:
+            CustomResourceAutomation: "%PKG_CUSTOM_RESOURCES_AUTOMATION%"
+            AnalysisAutomation: "%PKG_ANALYSIS_AUTOMATION%"
+    DynamoDB:
+        RecoveryStrategy:
+            EnablePITR: true
+        TTL:
+            AttributeName: ttl
+        AnalysisAutomation:
+            PartitionKey: uuid
+            IndexName: gsi-status-timestamp
+            IndexKey: status
+            IndexSortKey: timestamp
+            CounterKey: count
+            CounterMax: max
+            CounterMin: min
+
+Parameters:
+    Media2CloudStackName:
+        Type: String
+        Description: specific the stack name of your Media2Cloud CloudFormation stack
+    MaxConcurrentProcesses:
+        Type: Number
+        Description: maximum allowable concurrent analysis processes.
+        MinValue: 1
+        Default: 2
+    SchedulerFixedRateInMin:
+        Type: Number
+        Description: Unit in minute. Check analysis queue every N minutes.
+        MinValue: 5
+        MaxValue: 60
+        Default: 20
+
+Metadata:
+    AWS::CloudFormation::Interface:
+        ParameterGroups:
+            -
+                Label:
+                    default: "Media2Cloud Stack Configuration"
+                Parameters:
+                    - Media2CloudStackName
+            -
+                Label:
+                    default: "Analysis Automation Configuration"
+                Parameters:
+                    - MaxConcurrentProcesses
+                    - SchedulerFixedRateInMin
+        ParameterLabels:
+            Media2CloudStackName:
+                default: "Media2Cloud Stack Name"
+            MaxConcurrentProcesses:
+                default: "Analysis Queue Size"
+            SchedulerFixedRateInMin:
+                default: "CRON Scheduler"
+
+Resources:
+    ################################################################################
+    #
+    # Create custom resource lambda
+    #
+    ################################################################################
+    CustomResourceExecutionRole:
+        Type: AWS::IAM::Role
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W11
+                        reason: "This wildcard is present as the custom resource lambda needs to be able to access contents within the bucket!"
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: "Allow"
+                        Action:
+                            - "sts:AssumeRole"
+                        Principal:
+                            Service:
+                                - "lambda.amazonaws.com"
+            Path: /
+            Policies:
+                -
+                    PolicyName: !Sub [
+                        "${x0}-${AWS::StackName}-custom-resources-automation", {
+                            x0: !FindInMap [
+                                "Solution",
+                                "Project",
+                                "Id"
+                            ]
+                        }
+                    ]
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                            ## CloudWatch Logs
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "logs:CreateLogGroup"
+                                    - "logs:CreateLogStream"
+                                    - "logs:PutLogEvents"
+                                Resource:
+                                    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                            ## CloudFormation
+                            -
+                                Effect: "Allow"
+                                Action: "cloudformation:DescribeStacks"
+                                Resource:
+                                    - !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${Media2CloudStackName}/*"
+                            ## DynamoDB
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "dynamodb:DeleteItem"
+                                    - "dynamodb:DescribeTable"
+                                    - "dynamodb:PutItem"
+                                    - "dynamodb:Query"
+                                    - "dynamodb:Scan"
+                                    - "dynamodb:UpdateItem"
+                                    - "dynamodb:Attributes"
+                                    - "dynamodb:LeadingKeys"
+                                    - "dynamodb:ReturnConsumedCapacity"
+                                    - "dynamodb:ReturnValues"
+                                    - "dynamodb:Select"
+                                # The wildcard is presented as DynamoDB table names are yet to be determined
+                                Resource: [
+                                    !Sub [
+                                        "arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${x0}-*", {
+                                            x0: !FindInMap [
+                                                "Solution",
+                                                "Project",
+                                                "Id"
+                                            ]
+                                        }
+                                    ]
+                                ]
+                            ## SNS
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "sns:GetSubscriptionAttributes"
+                                    - "sns:GetTopicAttributes"
+                                    - "sns:ListSubscriptionsByTopic"
+                                    - "sns:ListTopics"
+                                    - "sns:SetSubscriptionAttributes"
+                                    - "sns:SetTopicAttributes"
+                                    - "sns:Subscribe"
+                                    - "sns:Unsubscribe"
+                                # This wildcard is present because the SNS topic is not known
+                                # before this custom resource lambda function is created.
+                                Resource:
+                                    - !Sub "arn:aws:sns:${AWS::Region}:${AWS::AccountId}:*"
+
+    CustomResourceFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            Description: !Sub [
+                "(${x0}) custom resources automation", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Runtime: nodejs10.x
+            MemorySize: 128
+            Timeout: 900
+            Handler: index.handler
+            Role: !GetAtt CustomResourceExecutionRole.Arn
+            Code:
+                S3Bucket: !Sub [
+                    "${x0}-${AWS::Region}",{
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "S3Bucket"
+                        ]
+                    }
+                ]
+                S3Key: !Sub [
+                    "${x0}/${x1}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "KeyPrefix"
+                        ],
+                        x1: !FindInMap [
+                            "Solution",
+                            "Package",
+                            "CustomResourceAutomation"
+                        ]
+                    }
+                ]
+
+    ParseMedia2CloudStack:
+        Type: Custom::ParseMedia2CloudStack
+        Properties:
+            ServiceToken: !GetAtt CustomResourceFunction.Arn
+            FunctionName: ParseMedia2CloudStack
+            StackName: !Ref Media2CloudStackName
+
+    ################################################################################
+    #
+    # DynamoDB related resources
+    #
+    ################################################################################
+    AnalysisAutomationTable:
+        Type: AWS::DynamoDB::Table
+        Metadata:
+            cfn_nag:
+                rules_to_suppress:
+                    -
+                        id: W28
+                        reason: "Table name is constructed with stack name. On update, we need to keep the existing table name."
+        Properties:
+            TableName: !Sub [
+                "${x0}-${AWS::StackName}-analysis-automation", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            BillingMode: "PAY_PER_REQUEST"
+            AttributeDefinitions:
+                -
+                    AttributeName: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "PartitionKey"
+                    ]
+                    AttributeType: "S"
+                -
+                    AttributeName: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexKey"
+                    ]
+                    AttributeType: "S"
+                -
+                    AttributeName: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexSortKey"
+                    ]
+                    AttributeType: "N"
+            KeySchema:
+                -
+                    AttributeName: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "PartitionKey"
+                    ]
+                    KeyType: HASH
+            SSESpecification:
+                SSEEnabled: true
+            PointInTimeRecoverySpecification:
+                PointInTimeRecoveryEnabled: !FindInMap [
+                    "DynamoDB",
+                    "RecoveryStrategy",
+                    "EnablePITR"
+                ]
+            GlobalSecondaryIndexes:
+                -
+                    IndexName: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexName"
+                    ]
+                    KeySchema:
+                        -
+                            AttributeName: !FindInMap [
+                                "DynamoDB",
+                                "AnalysisAutomation",
+                                "IndexKey"
+                            ]
+                            KeyType: HASH
+                        -
+                            AttributeName: !FindInMap [
+                                "DynamoDB",
+                                "AnalysisAutomation",
+                                "IndexSortKey"
+                            ]
+                            KeyType: RANGE
+                    Projection:
+                        ProjectionType: KEYS_ONLY
+
+    CreateAtomicCounter:
+        Type: Custom::CreateAtomicCounter
+        Properties:
+            ServiceToken: !GetAtt CustomResourceFunction.Arn
+            FunctionName: CreateAtomicCounter
+            Parameters:
+                TableName: !Ref AnalysisAutomationTable
+                Attributes:
+                    -
+                        Key: !FindInMap [
+                            "DynamoDB",
+                            "AnalysisAutomation",
+                            "PartitionKey"
+                        ]
+                        Value: "counter"
+                    -
+                        Key: !FindInMap [
+                            "DynamoDB",
+                            "AnalysisAutomation",
+                            "IndexKey"
+                        ]
+                        Value: "counter"
+                    -
+                        Key: !FindInMap [
+                            "DynamoDB",
+                            "AnalysisAutomation",
+                            "IndexSortKey"
+                        ]
+                        Value: 0
+                    -
+                        Key: !FindInMap [
+                            "DynamoDB",
+                            "AnalysisAutomation",
+                            "CounterMax"
+                        ]
+                        Value: !Ref MaxConcurrentProcesses
+                    -
+                        Key: !FindInMap [
+                            "DynamoDB",
+                            "AnalysisAutomation",
+                            "CounterMin"
+                        ]
+                        Value: 0
+                    -
+                        Key: !FindInMap [
+                            "DynamoDB",
+                            "AnalysisAutomation",
+                            "CounterKey"
+                        ]
+                        Value: 0
+
+    ################################################################################
+    #
+    # SNS Handler (Process ingest and analysis notification from M2C)
+    #
+    ################################################################################
+    AnalysisAutomationFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: "Allow"
+                        Action: "sts:AssumeRole"
+                        Principal:
+                            Service: "lambda.amazonaws.com"
+            Path: /
+            Policies:
+                -
+                    PolicyName: !Sub [
+                        "${x0}-${AWS::StackName}-analysis-automation-policy", {
+                            x0: !FindInMap [
+                                "Solution",
+                                "Project",
+                                "Id"
+                            ]
+                        }
+                    ]
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                            ## CloudWatch Logs
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "logs:CreateLogGroup"
+                                    - "logs:CreateLogStream"
+                                    - "logs:PutLogEvents"
+                                Resource:
+                                    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                            ## DynamoDB
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "dynamodb:DeleteItem"
+                                    - "dynamodb:DescribeTable"
+                                    - "dynamodb:Query"
+                                    - "dynamodb:Scan"
+                                    - "dynamodb:UpdateItem"
+                                    - "dynamodb:Attributes"
+                                    - "dynamodb:LeadingKeys"
+                                    - "dynamodb:ReturnConsumedCapacity"
+                                    - "dynamodb:ReturnValues"
+                                    - "dynamodb:Select"
+                                Resource:
+                                    - !GetAtt AnalysisAutomationTable.Arn
+                                    - !Sub [
+                                        "${x0}/index/${x1}", {
+                                            x0: !GetAtt AnalysisAutomationTable.Arn,
+                                            x1: !FindInMap [
+                                                "DynamoDB",
+                                                "AnalysisAutomation",
+                                                "IndexName"
+                                            ]
+                                        }
+                                    ]
+                            ## API Gateway
+                            -
+                                Effect: "Allow"
+                                Action: "execute-api:Invoke"
+                                Resource:
+                                    - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ParseMedia2CloudStack.Media2CloudApiId}/demo/OPTIONS/*"
+                                    - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ParseMedia2CloudStack.Media2CloudApiId}/demo/GET/*"
+                                    - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ParseMedia2CloudStack.Media2CloudApiId}/demo/POST/*"
+
+    AnalysisAutomationFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            FunctionName: !Sub [
+                "${x0}-${AWS::StackName}-analysis-automation", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Description: !Sub [
+                "(${x0}) analysis automation to queue and process ingested assets for aiml analysis", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Runtime: nodejs10.x
+            MemorySize: 128
+            Timeout: 900
+            Handler: index.handler
+            Role: !GetAtt AnalysisAutomationFunctionRole.Arn
+            Code:
+                S3Bucket: !Sub [
+                    "${x0}-${AWS::Region}",{
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "S3Bucket"
+                        ]
+                    }
+                ]
+                S3Key: !Sub [
+                    "${x0}/${x1}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "KeyPrefix"
+                        ],
+                        x1: !FindInMap [
+                            "Solution",
+                            "Package",
+                            "AnalysisAutomation"
+                        ]
+                    }
+                ]
+            Environment:
+                Variables:
+                    ENV_M2C_ENDPOINT: !GetAtt ParseMedia2CloudStack.Media2CloudEndpoint
+                    ENV_DDB_QUEUE_TABLE: !Ref AnalysisAutomationTable
+                    ENV_DDB_QUEUE_PARTITION_KEY: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "PartitionKey"
+                    ]
+                    ENV_DDB_GSI_INDEX_NAME: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexName"
+                    ]
+                    ENV_DDB_GSI_INDEX_PARTITION_KEY: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexKey"
+                    ]
+                    ENV_DDB_GSI_INDEX_SORT_KEY: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexSortKey"
+                    ]
+
+    Media2CloudSNSSubscription:
+        Type: AWS::SNS::Subscription
+        Properties:
+            Protocol: lambda
+            Endpoint: !GetAtt AnalysisAutomationFunction.Arn
+            TopicArn: !GetAtt ParseMedia2CloudStack.SNSTopicArn
+
+    Media2CloudSNSLambdaPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            FunctionName: !GetAtt AnalysisAutomationFunction.Arn
+            Action: lambda:InvokeFunction
+            Principal: sns.amazonaws.com
+            SourceArn: !GetAtt ParseMedia2CloudStack.SNSTopicArn
+
+    ################################################################################
+    #
+    # CloudWatch Event (CRON Job to process analysis automation queue
+    #
+    ################################################################################
+    CronJobFunctionRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Version: "2012-10-17"
+                Statement:
+                    -
+                        Effect: "Allow"
+                        Action: "sts:AssumeRole"
+                        Principal:
+                            Service: "lambda.amazonaws.com"
+            Path: /
+            Policies:
+                -
+                    PolicyName: !Sub [
+                        "${x0}-${AWS::StackName}-analysis-automation-cron-policy", {
+                            x0: !FindInMap [
+                                "Solution",
+                                "Project",
+                                "Id"
+                            ]
+                        }
+                    ]
+                    PolicyDocument:
+                        Version: "2012-10-17"
+                        Statement:
+                            ## CloudWatch Logs
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "logs:CreateLogGroup"
+                                    - "logs:CreateLogStream"
+                                    - "logs:PutLogEvents"
+                                Resource:
+                                    - !Sub "arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/aws/lambda/*"
+                            ## DynamoDB
+                            -
+                                Effect: "Allow"
+                                Action:
+                                    - "dynamodb:DeleteItem"
+                                    - "dynamodb:DescribeTable"
+                                    - "dynamodb:Query"
+                                    - "dynamodb:Scan"
+                                    - "dynamodb:UpdateItem"
+                                    - "dynamodb:Attributes"
+                                    - "dynamodb:LeadingKeys"
+                                    - "dynamodb:ReturnConsumedCapacity"
+                                    - "dynamodb:ReturnValues"
+                                    - "dynamodb:Select"
+                                Resource:
+                                    - !GetAtt AnalysisAutomationTable.Arn
+                                    - !Sub [
+                                        "${x0}/index/${x1}", {
+                                            x0: !GetAtt AnalysisAutomationTable.Arn,
+                                            x1: !FindInMap [
+                                                "DynamoDB",
+                                                "AnalysisAutomation",
+                                                "IndexName"
+                                            ]
+                                        }
+                                    ]
+                            ## API Gateway
+                            -
+                                Effect: "Allow"
+                                Action: "execute-api:Invoke"
+                                Resource:
+                                    - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ParseMedia2CloudStack.Media2CloudApiId}/demo/OPTIONS/*"
+                                    - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ParseMedia2CloudStack.Media2CloudApiId}/demo/GET/*"
+                                    - !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ParseMedia2CloudStack.Media2CloudApiId}/demo/POST/*"
+
+    CronJobFunction:
+        Type: AWS::Lambda::Function
+        Properties:
+            FunctionName: !Sub [
+                "${x0}-${AWS::StackName}-analysis-automation-cron", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Description: !Sub [
+                "(${x0}) analysis automation CRON Job to process analysis queue", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Runtime: nodejs10.x
+            MemorySize: 128
+            Timeout: 900
+            Handler: index.handler
+            Role: !GetAtt CronJobFunctionRole.Arn
+            Code:
+                S3Bucket: !Sub [
+                    "${x0}-${AWS::Region}",{
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "S3Bucket"
+                        ]
+                    }
+                ]
+                S3Key: !Sub [
+                    "${x0}/${x1}", {
+                        x0: !FindInMap [
+                            "Solution",
+                            "Template",
+                            "KeyPrefix"
+                        ],
+                        x1: !FindInMap [
+                            "Solution",
+                            "Package",
+                            "AnalysisAutomation"
+                        ]
+                    }
+                ]
+            Environment:
+                Variables:
+                    ENV_M2C_ENDPOINT: !GetAtt ParseMedia2CloudStack.Media2CloudEndpoint
+                    ENV_DDB_QUEUE_TABLE: !Ref AnalysisAutomationTable
+                    ENV_DDB_QUEUE_PARTITION_KEY: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "PartitionKey"
+                    ]
+                    ENV_DDB_GSI_INDEX_NAME: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexName"
+                    ]
+                    ENV_DDB_GSI_INDEX_PARTITION_KEY: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexKey"
+                    ]
+                    ENV_DDB_GSI_INDEX_SORT_KEY: !FindInMap [
+                        "DynamoDB",
+                        "AnalysisAutomation",
+                        "IndexSortKey"
+                    ]
+
+    CronJobEventRule:
+        Type: AWS::Events::Rule
+        Properties:
+            Name: !Sub [
+                "${x0}-${AWS::StackName}-analysis-automation-cron", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            Description: !Sub [
+                "(${x0}) cron job to process analysis queue", {
+                    x0: !FindInMap [
+                        "Solution",
+                        "Project",
+                        "Id"
+                    ]
+                }
+            ]
+            ScheduleExpression: !Sub "rate(${SchedulerFixedRateInMin} minutes)"
+            State: ENABLED
+            Targets:
+                -
+                    Arn: !GetAtt CronJobFunction.Arn
+                    Id: !Sub "Id-${CronJobFunction}"
+                    Input: '{
+                        "service": "events.amazonaws.com"
+                    }'
+
+    CronJobLambdaPermission:
+        Type: AWS::Lambda::Permission
+        Properties:
+            FunctionName: !Ref CronJobFunction
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: !GetAtt CronJobEventRule.Arn
+
+Outputs:
+    ## Custom Resource related
+    CustomResourceExecutionRoleArn:
+        Value: !GetAtt CustomResourceExecutionRole.Arn
+        Description: Role Arn (Custom Resource)
+    CustomResourceName:
+        Value: !Ref CustomResourceFunction
+        Description: Lambda Name (Custom Resource)
+    CustomResourceArn:
+        Value: !GetAtt CustomResourceFunction.Arn
+        Description: Lambda Arn (Custom Resource)
+
+    ## DynamoDB related
+    AnalysisAutomationTableName:
+        Value: !Ref AnalysisAutomationTable
+        Description: Table Name (Analysis Automation Queue)
+
+    ## Media2Cloud SNS Handler
+    AnalysisAutomationFunctionRole:
+        Value: !GetAtt AnalysisAutomationFunctionRole.Arn
+        Description: Role Arn (Analysis Automation SNS Handler)
+    AnalysisAutomationFunctionArn:
+        Value: !GetAtt AnalysisAutomationFunction.Arn
+        Description: Lambda Arn (Analysis Automation SNS Handler)
+
+    ## CloudWatch CRON Job Handler
+    CronJobFunctionRole:
+        Value: !GetAtt CronJobFunctionRole.Arn
+        Description: Role Arn (Analysis Automation CW Event Handler)
+    CronJobFunctionArn:
+        Value: !GetAtt CronJobFunction.Arn
+        Description: Lambda Arn (Analysis Automation CW Event Handler)
+    CronJobEventRuleName:
+        Value: !Ref CronJobEventRule
+        Description: CloudWatch Rule (Analysis Automation Scheduler)
+    CronJobEventRuleArn:
+        Value: !GetAtt CronJobEventRule.Arn
+        Description: CloudWatch Rule Arn (Analysis Automation Scheduler)

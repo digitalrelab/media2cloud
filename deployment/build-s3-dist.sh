@@ -137,6 +137,8 @@ PKG_GT_LABELING=
 PKG_API=
 PKG_ERROR_HANDLER=
 PKG_WEBAPP=
+PKG_ANALYSIS_AUTOMATION=
+PKG_CUSTOM_RESOURCES_AUTOMATION=
 
 ## trap exit signal and make sure to remove the TMP_DIR
 trap "rm -rf $TMP_DIR" EXIT
@@ -271,6 +273,12 @@ function build_cloudformation_templates() {
 
   echo "Updating %PKG_API% param in cloudformation templates..."
   sed -i'.bak' -e "s|%PKG_API%|${PKG_API}|g" *.yaml || exit 1
+
+  echo "Updating %PKG_ANALYSIS_AUTOMATION% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%PKG_ANALYSIS_AUTOMATION%|${PKG_ANALYSIS_AUTOMATION}|g" *.yaml || exit 1
+
+  echo "Updating %PKG_CUSTOM_RESOURCES_AUTOMATION% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%PKG_CUSTOM_RESOURCES_AUTOMATION%|${PKG_CUSTOM_RESOURCES_AUTOMATION}|g" *.yaml || exit 1
 
   # remove .bak
   runcmd rm -v *.bak
@@ -557,6 +565,42 @@ function build_api_package() {
   npm run build
   npm run zip -- "$PKG_API" .
   cp -v "./dist/$PKG_API" "$BUILD_DIST_DIR"
+  popd
+}
+
+#
+# @function build_automation_package
+# @description
+#   build automation lambda package and copy to deployment/dist folder
+#
+function build_automation_package() {
+  echo "------------------------------------------------------------------------------"
+  echo "Building Automatiion lambda package"
+  echo "------------------------------------------------------------------------------"
+  pushd "$SOURCE_DIR/analysis-automation" || exit
+  PKG_ANALYSIS_AUTOMATION=$(grep_zip_name "./package.json")
+  npm install
+  npm run build
+  npm run zip -- "$PKG_ANALYSIS_AUTOMATION" .
+  cp -v "./dist/$PKG_ANALYSIS_AUTOMATION" "$BUILD_DIST_DIR"
+  popd
+}
+
+#
+# @function build_custom_resources_automation_package
+# @description
+#   build automation lambda package and copy to deployment/dist folder
+#
+function build_custom_resources_automation_package() {
+  echo "------------------------------------------------------------------------------"
+  echo "Building Custom Resources Automatiion lambda package"
+  echo "------------------------------------------------------------------------------"
+  pushd "$SOURCE_DIR/custom-resources-automation" || exit
+  PKG_CUSTOM_RESOURCES_AUTOMATION=$(grep_zip_name "./package.json")
+  npm install
+  npm run build
+  npm run zip -- "$PKG_CUSTOM_RESOURCES_AUTOMATION" .
+  cp -v "./dist/$PKG_CUSTOM_RESOURCES_AUTOMATION" "$BUILD_DIST_DIR"
   popd
 }
 
@@ -894,8 +938,19 @@ function on_complete() {
   echo "** PKG_GT_LABELING=${PKG_GT_LABELING} **"
   echo "** PKG_ERROR_HANDLER=${PKG_ERROR_HANDLER} **"
   echo "** PKG_API=${PKG_API} **"
+  echo "** PKG_ANALYSIS_AUTOMATION=${PKG_ANALYSIS_AUTOMATION} **"
+  echo "** PKG_CUSTOM_RESOURCES_AUTOMATION=${PKG_CUSTOM_RESOURCES_AUTOMATION} **"
   echo "** PKG_WEBAPP=${PKG_WEBAPP} **"
 }
+
+<<//
+clean_start
+build_automation_package
+build_custom_resources_automation_package
+build_cloudformation_templates
+on_complete
+exit 0
+//
 
 #
 # main routine goes here
@@ -928,6 +983,9 @@ build_error_handler_package
 build_api_package
 # webapp
 build_webapp_package
+# automation
+build_automation_package
+build_custom_resources_automation_package
 # cloudformation
 build_cloudformation_templates
 on_complete
