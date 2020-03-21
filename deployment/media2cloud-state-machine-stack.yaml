@@ -1030,6 +1030,16 @@ Resources:
                                         "progress.$": "$.progress",
                                         "input.$": "$.next"
                                     },
+                                    "Retry": [
+                                        {
+                                            "ErrorEquals": [
+                                                "States.ALL"
+                                            ],
+                                            "IntervalSeconds": 1,
+                                            "MaxAttempts": 4,
+                                            "BackoffRate": 1.2
+                                        }
+                                    ],
                                     "End": true
                                 }
                             }
@@ -1380,6 +1390,16 @@ Resources:
                                         "progress.$": "$.progress",
                                         "input.$": "$.next"
                                     },
+                                    "Retry": [
+                                        {
+                                            "ErrorEquals": [
+                                                "States.ALL"
+                                            ],
+                                            "IntervalSeconds": 1,
+                                            "MaxAttempts": 4,
+                                            "BackoffRate": 1.2
+                                        }
+                                    ],
                                     "End": true
                                 }
                             }
