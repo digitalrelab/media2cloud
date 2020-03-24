@@ -46,6 +46,14 @@ where
   --solution SOLUTION         [optional] if not specified, default to 'media2cloud'
 
   --version VERSION           [optional] if not specified, use 'version' field from package.json
+
+  --single-region             [optional] specify if it is to deploy to a single region. This affects
+                              how the solution template looks up the location of the packages. If
+                              '--single-region' is specified, the solution stores templates and
+                              packages in the bucket that you specify in '--bucket' setting.
+                              If '--single-region' is not specified, the solution stores templates
+                              and packages in the bucket that uses region suffix. For example, if
+                              --bucket MY_BUCKET, then the actual bucket name will be 'MY_BUCKET-us-east-1'
 "
   return 0
 }
@@ -74,6 +82,10 @@ while [[ $# -gt 0 ]]; do
       VERSION="$2"
       shift # past key
       shift # past value
+      ;;
+      -r|--single-region)
+      SINGLE_REGION=true
+      shift # past key
       ;;
       *)
       shift
@@ -109,6 +121,9 @@ TMP_DIR=$(mktemp -d)
   echo "error: SOLUTION variable is not defined" && \
   usage && \
   exit 1
+
+[ -z "$SINGLE_REGION" ] && \
+  SINGLE_REGION=false
 
 #
 # zip packages
@@ -279,6 +294,9 @@ function build_cloudformation_templates() {
 
   echo "Updating %PKG_CUSTOM_RESOURCES_AUTOMATION% param in cloudformation templates..."
   sed -i'.bak' -e "s|%PKG_CUSTOM_RESOURCES_AUTOMATION%|${PKG_CUSTOM_RESOURCES_AUTOMATION}|g" *.yaml || exit 1
+
+  echo "Updating %SINGLE_REGION% param in cloudformation templates..."
+  sed -i'.bak' -e "s|%SINGLE_REGION%|${SINGLE_REGION}|g" *.yaml || exit 1
 
   # remove .bak
   runcmd rm -v *.bak

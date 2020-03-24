@@ -13,6 +13,7 @@ Mappings:
         Template:
             S3Bucket: "%BUCKET%"
             KeyPrefix: "%KEYPREFIX%"
+            SingleRegion: "%SINGLE_REGION%"
         Package:
             CustomResourceX: "%PKG_CUSTOM_RESOURCES%"
             StateMachineErrorHandler: "%PKG_ERROR_HANDLER%"
@@ -214,6 +215,14 @@ Conditions:
     bAimlAudioText: !Equals [
         !Ref AIOptions,
         "Audio and Text (Transcript,Keyphrase,Entity,Text)"
+    ]
+    bSingleRegion: !Equals [
+        !FindInMap [
+            "Solution",
+            "Template",
+            "SingleRegion"
+        ],
+        "true"
     ]
 
 Resources:
@@ -524,11 +533,16 @@ Resources:
             Role: !GetAtt CustomResourceExecutionRole.Arn
             Code:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}",{
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -618,11 +632,16 @@ Resources:
                 - nodejs10.x
             Content:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -670,11 +689,16 @@ Resources:
                 - nodejs10.x
             Content:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -722,11 +746,16 @@ Resources:
                 - nodejs10.x
             Content:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -774,11 +803,16 @@ Resources:
                 - nodejs10.x
             Content:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -826,11 +860,16 @@ Resources:
                 - nodejs10.x
             Content:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -1272,13 +1311,18 @@ Resources:
         Type: AWS::CloudFormation::Stack
         Properties:
             TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/media2cloud-bucket-stack.template", {
+                "https://${x0}${x1}.s3.amazonaws.com/${x2}/media2cloud-bucket-stack.template", {
                     x0: !FindInMap [
                         "Solution",
                         "Template",
                         "S3Bucket"
                     ],
-                    x1: !FindInMap [
+                    x1: !If [
+                        bSingleRegion,
+                        "",
+                        !Sub "-${AWS::Region}"
+                    ],
+                    x2: !FindInMap [
                         "Solution",
                         "Template",
                         "KeyPrefix"
@@ -1287,11 +1331,16 @@ Resources:
             ]
             Parameters:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -1338,13 +1387,18 @@ Resources:
         Type: AWS::CloudFormation::Stack
         Properties:
             TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/media2cloud-webapp-stack.template", {
+                "https://${x0}${x1}.s3.amazonaws.com/${x2}/media2cloud-webapp-stack.template", {
                     x0: !FindInMap [
                         "Solution",
                         "Template",
                         "S3Bucket"
                     ],
-                    x1: !FindInMap [
+                    x1: !If [
+                        bSingleRegion,
+                        "",
+                        !Sub "-${AWS::Region}"
+                    ],
+                    x2: !FindInMap [
                         "Solution",
                         "Template",
                         "KeyPrefix"
@@ -1354,11 +1408,16 @@ Resources:
 
             Parameters:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -1506,13 +1565,18 @@ Resources:
         Type: AWS::CloudFormation::Stack
         Properties:
             TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/media2cloud-search-engine-stack.template", {
+                "https://${x0}${x1}.s3.amazonaws.com/${x2}/media2cloud-search-engine-stack.template", {
                     x0: !FindInMap [
                         "Solution",
                         "Template",
                         "S3Bucket"
                     ],
-                    x1: !FindInMap [
+                    x1: !If [
+                        bSingleRegion,
+                        "",
+                        !Sub "-${AWS::Region}"
+                    ],
+                    x2: !FindInMap [
                         "Solution",
                         "Template",
                         "KeyPrefix"
@@ -1521,11 +1585,16 @@ Resources:
             ]
             Parameters:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -1711,13 +1780,18 @@ Resources:
         Type: AWS::CloudFormation::Stack
         Properties:
             TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/media2cloud-state-machine-stack.template", {
+                "https://${x0}${x1}.s3.amazonaws.com/${x2}/media2cloud-state-machine-stack.template", {
                     x0: !FindInMap [
                         "Solution",
                         "Template",
                         "S3Bucket"
                     ],
-                    x1: !FindInMap [
+                    x1: !If [
+                        bSingleRegion,
+                        "",
+                        !Sub "-${AWS::Region}"
+                    ],
+                    x2: !FindInMap [
                         "Solution",
                         "Template",
                         "KeyPrefix"
@@ -1726,11 +1800,16 @@ Resources:
             ]
             Parameters:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -1812,13 +1891,18 @@ Resources:
         Type: AWS::CloudFormation::Stack
         Properties:
             TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/media2cloud-groundtruth-stack.template", {
+                "https://${x0}${x1}.s3.amazonaws.com/${x2}/media2cloud-groundtruth-stack.template", {
                     x0: !FindInMap [
                         "Solution",
                         "Template",
                         "S3Bucket"
                     ],
-                    x1: !FindInMap [
+                    x1: !If [
+                        bSingleRegion,
+                        "",
+                        !Sub "-${AWS::Region}"
+                    ],
+                    x2: !FindInMap [
                         "Solution",
                         "Template",
                         "KeyPrefix"
@@ -1827,11 +1911,16 @@ Resources:
             ]
             Parameters:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -1996,11 +2085,16 @@ Resources:
             Role: !GetAtt StateMachineErrorHandlerRole.Arn
             Code:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}",{
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -2106,13 +2200,18 @@ Resources:
         Type: AWS::CloudFormation::Stack
         Properties:
             TemplateURL: !Sub [
-                "https://${x0}-${AWS::Region}.s3.amazonaws.com/${x1}/media2cloud-api-stack.template", {
+                "https://${x0}${x1}.s3.amazonaws.com/${x2}/media2cloud-api-stack.template", {
                     x0: !FindInMap [
                         "Solution",
                         "Template",
                         "S3Bucket"
                     ],
-                    x1: !FindInMap [
+                    x1: !If [
+                        bSingleRegion,
+                        "",
+                        !Sub "-${AWS::Region}"
+                    ],
+                    x2: !FindInMap [
                         "Solution",
                         "Template",
                         "KeyPrefix"
@@ -2121,11 +2220,16 @@ Resources:
             ]
             Parameters:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}", {
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]

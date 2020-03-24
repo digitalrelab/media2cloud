@@ -13,6 +13,7 @@ Mappings:
         Template:
             S3Bucket: "%BUCKET%"
             KeyPrefix: "%KEYPREFIX%"
+            SingleRegion: "%SINGLE_REGION%"
         Package:
             CustomResourceAutomation: "%PKG_CUSTOM_RESOURCES_AUTOMATION%"
             AnalysisAutomation: "%PKG_ANALYSIS_AUTOMATION%"
@@ -67,6 +68,16 @@ Metadata:
                 default: "Analysis Queue Size"
             SchedulerFixedRateInMin:
                 default: "CRON Scheduler"
+
+Conditions:
+    bSingleRegion: !Equals [
+        !FindInMap [
+            "Solution",
+            "Template",
+            "SingleRegion"
+        ],
+        "true"
+    ]
 
 Resources:
     ################################################################################
@@ -186,11 +197,16 @@ Resources:
             Role: !GetAtt CustomResourceExecutionRole.Arn
             Code:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}",{
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -457,11 +473,16 @@ Resources:
             Role: !GetAtt AnalysisAutomationFunctionRole.Arn
             Code:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}",{
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]
@@ -622,11 +643,16 @@ Resources:
             Role: !GetAtt CronJobFunctionRole.Arn
             Code:
                 S3Bucket: !Sub [
-                    "${x0}-${AWS::Region}",{
+                    "${x0}${x1}", {
                         x0: !FindInMap [
                             "Solution",
                             "Template",
                             "S3Bucket"
+                        ],
+                        x1: !If [
+                            bSingleRegion,
+                            "",
+                            !Sub "-${AWS::Region}"
                         ]
                     }
                 ]

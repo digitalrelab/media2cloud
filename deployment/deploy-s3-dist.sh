@@ -37,22 +37,29 @@ It should be run from the repo's deployment directory
 
 ------------------------------------------------------------------------------
 cd deployment
-bash ./deploy-s3-dist.sh --bucket DEPLOY_BUCKET_BASENAME [--version VERSION] [--solution SOLUTION] [--region REGION]
+bash ./deploy-s3-dist.sh --bucket DEPLOY_BUCKET_BASENAME [--version VERSION] [--solution SOLUTION] [--single-region]
 
 where
-  --bucket BUCKET_BASENAME    should be the base name for the S3 bucket location where
-                              the template will store the Lambda code from.
-                              This script will append '-[region_name]' to this bucket name.
-                              For example, ./deploy-s3-dist.sh --bucket solutions
-                              The template will expect the solution code to be located in the
-                              solutions-[region_name] bucket
+  --bucket BUCKET             specify the bucket name where the templates and packages deployed to.
+                              By default, the script deploys the templates and packages across all regions
+                              where '--bucket' setting is treated as a basename of the bucket and a region
+                              string is automatically appended to the bucket name. For example,
+                              if you specify '--bucket MY_BUCKET', then the actual bucket name(s) become
+                              MY_BUCKET-us-east-1, MY_BUCKET-eu-west-1, and so forth. (All region
+                              deployments require that all regional buckets are already created.
+                              Use '--single-region' flag to deploy to a single region (single bucket). 
 
   --solution SOLUTION         [optional] if not specified, default to 'media2cloud'
 
   --version VERSION           [optional] if not specified, use 'version' field from package.json
 
-  --region REGION             [optional] a single region to deploy. If not specified, it deploys to all
-                              supported regions. (This assumes all regional buckets already exist.)
+  --single-region             [optional] if specified, it deploys to a single bucket that you specify
+                              in '--bucket' setting
+
+  --acl ACL_SETTINGS          [optional] if not specified, it deploys with 'bucket-owner-full-control' access
+                              control setting. You could specify 'public-read' if you plan to share the solution
+                              with other AWS accounts. Note that it requires your bucket to be configured to permit
+                              'public-read' acl settings
 "
   return 0
 }
@@ -79,8 +86,13 @@ while [[ $# -gt 0 ]]; do
       shift # past argument
       shift # past value
       ;;
-      -r|--region)
-      SINGLE_REGION="$2"
+      -r|--single-region)
+      SINGLE_REGION=true
+      shift # past argument
+      shift # past value
+      ;;
+      -a|--acl)
+      ACL_SETTING="$2"
       shift # past argument
       shift # past value
       ;;
@@ -111,6 +123,12 @@ done
   usage && \
   exit 1
 
+[ -z "$SINGLE_REGION" ] && \
+  SINGLE_REGION=false
+
+[ -z "$ACL_SETTING" ] && \
+  ACL_SETTING="bucket-owner-full-control"
+
 #
 # @function copy_to_bucket
 # @description copy solution to regional bucket
@@ -127,13 +145,17 @@ function copy_to_bucket() {
     return 0
 
   echo "uploading package to '${bucket}'..."
-  aws s3 cp $source s3://${bucket}/${SOLUTION}/${VERSION}/ --recursive --acl public-read --region ${region}
+  if [ -z "$region" ]; then
+    aws s3 cp $source s3://${bucket}/${SOLUTION}/${VERSION}/ --recursive --acl ${ACL_SETTING}
+  else
+    aws s3 cp $source s3://${bucket}/${SOLUTION}/${VERSION}/ --recursive --acl ${ACL_SETTING} --region ${region}
+  fi
 }
 
-if [ x"$SINGLE_REGION" != "x" ]; then
+if [ "$SINGLE_REGION" == "true" ]; then
   # deploy to a single region
-  echo "'${SOLUTION} ($VERSION)' package will be deployed to '${BUCKET}-${SINGLE_REGION}' bucket in ${SINGLE_REGION} region"
-  copy_to_bucket ${BUID_DIST_DIR} "${BUCKET}-${SINGLE_REGION}" "${SINGLE_REGION}"
+  echo "'${SOLUTION} ($VERSION)' package will be deployed to '${BUCKET}' bucket"
+  copy_to_bucket ${BUID_DIST_DIR} "${BUCKET}"
 else
   echo "'${SOLUTION} ($VERSION)' package will be deployed to '${BUCKET}-[region]' buckets: ${REGIONS[*]} regions"
   # special case, deploy to main bucket (without region suffix)
