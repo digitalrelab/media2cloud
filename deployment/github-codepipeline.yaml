@@ -24,8 +24,8 @@ Parameters:
             - dev
             - stage
 
-    GitHubUser:
-        Description: specify GitHub username
+    GitHubOwner:
+        Description: specify owner of the repo
         Type: String
         AllowedPattern: "[a-zA-Z0-9-]+"
 
@@ -61,7 +61,7 @@ Metadata:
                 Label:
                     default: GITHUB CONFIGURATION
                 Parameters:
-                    - GitHubUser
+                    - GitHubOwner
                     - GitHubRepo
                     - GitHubBranch
                     - GitHubOAuthToken
@@ -72,8 +72,8 @@ Metadata:
                 default: "Build Version"
             BuildType:
                 default: "Environment Type"
-            GitHubUser:
-                default: "Username"
+            GitHubOwner:
+                default: "Repository Owner"
             GitHubRepo:
                 default: "Repository"
             GitHubBranch:
@@ -201,7 +201,7 @@ Resources:
         Type: AWS::SecretsManager::Secret
         Properties:
             Description: !Sub "(${AWS::StackName}) store GitHub personal access tokens"
-            Name: !Sub "${GitHubUser}-github-token"
+            Name: !Sub "${GitHubRepo}-github-token"
             SecretString: !Sub '{"token": "${GitHubOAuthToken}"}'
             KmsKeyId: !Sub "arn:aws:kms:${AWS::Region}:${AWS::AccountId}:alias/aws/secretsmanager"
             Tags:
@@ -266,7 +266,7 @@ Resources:
         Properties:
             Authentication: GITHUB_HMAC
             AuthenticationConfiguration:
-                SecretToken: !Sub "{{resolve:secretsmanager:${GitHubUser}-github-token:SecretString:token}}"
+                SecretToken: !Sub "{{resolve:secretsmanager:${GitHubRepo}-github-token:SecretString:token}}"
             Filters:
                 -
                     JsonPath: $.ref
@@ -299,10 +299,10 @@ Resources:
                             OutputArtifacts:
                                 - Name: SourceApp
                             Configuration:
-                                Owner: !Ref GitHubUser
+                                Owner: !Ref GitHubOwner
                                 Repo: !Ref GitHubRepo
                                 Branch: !Ref GitHubBranch
-                                OAuthToken: !Sub "{{resolve:secretsmanager:${GitHubUser}-github-token:SecretString:token}}"
+                                OAuthToken: !Sub "{{resolve:secretsmanager:${GitHubRepo}-github-token:SecretString:token}}"
                                 PollForSourceChanges: false
                             RunOrder: 1
                 -
